@@ -9,8 +9,8 @@ npm i
 node index.js
 ```
 
-## Notes
 
+## Notes
 
 > When using option 1, DuckDB supports multiple writer threads using a combination of MVCC
 But I couldn't see how to execute more than 1 tx a time

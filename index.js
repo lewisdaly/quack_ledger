@@ -61,7 +61,7 @@ const setup = async () => {
   }
 }
 
-const insertWithReties = async (transfer, statements, retries) => {
+const insertWithRetries = async (transfer, statements, retries) => {
   if (retries === 0) {
     throw new Error(`ran out of retries!`)
   }
@@ -90,28 +90,29 @@ const insertWithReties = async (transfer, statements, retries) => {
     await connection.run('COMMIT');
   } catch (err) {
     await connection.run('ROLLBACK');
-    return insertWithReties(transfer, statements, retries - 1)
+    return insertWithRetries(transfer, statements, retries - 1)
   }
 }
 
 const run = async () => {
-  // insert the transfers
-  const start = performance.now()
-
   const statements = [
     await connection.prepare(`UPDATE accounts SET credits = credits + $1 WHERE id = $2`),
     await connection.prepare(`UPDATE accounts SET debits = debits + $1 WHERE id = $2`),
     await connection.prepare(`INSERT INTO transfers VALUES ($1, $2, $3, $4, $5)`),
   ]
+  const start = performance.now()
 
+
+  // insert the transfers - one at a time!
   for await (const transfer of transfers) {
-    await insertWithReties(transfer, statements, 10)
+    await insertWithRetries(transfer, statements, 10)
   }
 
   const end = performance.now()
 
   const duration = Number(end - start).toFixed(2)
-  const avgTPS = Number(transfers.length / duration).toFixed(2)
+  const durationS = Number(end - start)/1000
+  const avgTPS = Number(transfers.length / durationS).toFixed(2)
   console.log(`Finished inserting: ${transfers.length} transfers after ${duration} ms - Average TPS: ${avgTPS}`)
 }
 
@@ -126,4 +127,3 @@ main()
     console.log('uncaught exception', err)
     process.exit(1)
   })
-
