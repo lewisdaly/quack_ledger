@@ -4,23 +4,13 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { cwd } = require('node:process')
 
-const ACCOUNTS_COUNT = 100
 const TRANSFERS_COUNT = 10000
+// What % of transfers are a debit/credit from the hot account?
+const workloadContention = 0.9
 
 let instance
 let connection
-const accountIds = []
-const transfers = []
-
-const randomElementExcluding = (arr, excluded, maxRetries = 10) => {
-  for (let i = 0; i < maxRetries; i++) {
-    const randomElement = arr[Math.floor(Math.random() * arr.length)];
-    if (randomElement !== excluded) {
-      return randomElement;
-    }
-  }
-  throw new Error(`failed to find unique element`)
-}
+let transfers = []
 
 const setup = async () => {
   // set up duckdb, run migration
@@ -33,12 +23,44 @@ const setup = async () => {
   await connection.run('TRUNCATE TABLE transfers');
   await connection.run('TRUNCATE TABLE accounts');
 
+  // 10 hot accounts
+  const hotAccountIds = Array.from({length: 10}).map(() => id())
+  const hotTransfers = Math.floor(TRANSFERS_COUNT * workloadContention)
+  const coldTransfers = TRANSFERS_COUNT - hotTransfers
+  const accountIdMap = {}
+
+  // Create hot transfers - one leg debits/credits the hot accounts
+  for (let idx = 0; idx < hotTransfers; idx++) {
+    const debitAccountId = hotAccountIds[Math.floor(Math.random() * hotAccountIds.length)];
+    const creditAccountId = id()
+    transfers.push({
+      id: id(),
+      debitAccountId,
+      creditAccountId,
+      amount: 1n
+    })
+    accountIdMap[debitAccountId] = true
+    accountIdMap[creditAccountId] = true
+  }
+
+  // Create cold transfers
+  for (let idx = 0; idx < coldTransfers; idx++) {
+    const debitAccountId = id()
+    const creditAccountId = id()
+    transfers.push({
+      id: id(),
+      debitAccountId,
+      creditAccountId,
+      amount: 1n
+    })
+    accountIdMap[debitAccountId] = true
+    accountIdMap[creditAccountId] = true
+  }
+
+  const accountIds = Object.keys(accountIdMap)
   const statement = await connection.prepare(`INSERT INTO accounts VALUES ($1, $2, $3, $4)`)
 
-  // Create accounts
-  for (let idx = 0; idx < ACCOUNTS_COUNT; idx++) {
-    const accountId = id()
-    accountIds.push(accountId)
+  for await (const accountId of accountIds) {
     statement.bind({
       1: accountId,
       2: 0,
@@ -48,17 +70,8 @@ const setup = async () => {
     await statement.run()
   }
 
-  // Invent some transfers with random contention
-  for (let idx = 0; idx < TRANSFERS_COUNT; idx++) {
-    const debitAccountId = randomElementExcluding(accountIds, undefined)
-    const creditAccountId = randomElementExcluding(accountIds, debitAccountId)
-    transfers.push({
-      id: id(),
-      debitAccountId,
-      creditAccountId,
-      amount: 1n
-    })
-  }
+  // shuffle the transfers
+  transfers = shuffle(transfers)
 }
 
 const insertWithRetries = async (transfer, statements, retries) => {
@@ -127,3 +140,13 @@ main()
     console.log('uncaught exception', err)
     process.exit(1)
   })
+
+
+// util functions
+function shuffle(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
