@@ -24,15 +24,18 @@ const setup = async () => {
   await connection.run('TRUNCATE TABLE accounts');
 
   // 10 hot accounts
-  const hotAccountIds = Array.from({length: 10}).map(() => id())
+  const hotAccountIds = Array.from({ length: 10 }).map(() => id())
   const hotTransfers = Math.floor(TRANSFERS_COUNT * workloadContention)
   const coldTransfers = TRANSFERS_COUNT - hotTransfers
   const accountIdMap = {}
 
   // Create hot transfers - one leg debits/credits the hot accounts
   for (let idx = 0; idx < hotTransfers; idx++) {
-    const debitAccountId = hotAccountIds[Math.floor(Math.random() * hotAccountIds.length)];
-    const creditAccountId = id()
+    // randomize between the hot account as debit and credit side
+    const [debitAccountId, creditAccountId] = shuffle([
+      hotAccountIds[Math.floor(Math.random() * hotAccountIds.length)],
+      id()
+    ])
     transfers.push({
       id: id(),
       debitAccountId,
@@ -70,7 +73,7 @@ const setup = async () => {
     await statement.run()
   }
 
-  // shuffle the transfers
+  // shuffle the transfers for random access
   transfers = shuffle(transfers)
 }
 
@@ -124,7 +127,7 @@ const run = async () => {
   const end = performance.now()
 
   const duration = Number(end - start).toFixed(2)
-  const durationS = Number(end - start)/1000
+  const durationS = Number(end - start) / 1000
   const avgTPS = Number(transfers.length / durationS).toFixed(2)
   console.log(`Finished inserting: ${transfers.length} transfers after ${duration} ms - Average TPS: ${avgTPS}`)
 }
